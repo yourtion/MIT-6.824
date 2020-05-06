@@ -1,0 +1,11 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="MR-Master" type="GoApplicationRunConfiguration" factoryName="Go Application">
+    <module name="MIT-6.824" />
+    <working_directory value="$PROJECT_DIR$/src/main" />
+    <parameters value="pbd.go" />
+    <kind value="FILE" />
+    <filePath value="$PROJECT_DIR$/src/main/mrmaster.go" />
+    <directory value="$PROJECT_DIR$/" />
+    <method v="2" />
+  </configuration>
+</component>
