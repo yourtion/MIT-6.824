@@ -33,7 +33,24 @@ type GetTaskReply struct {
 	TaskType string
 	Key      string
 	ReduceN  int
-	MapId    int
+	TaskId   int
+}
+
+type SendMapResultArgs struct {
+	Ok    bool
+	MapFile string
+	ReduceFiles []string
+}
+
+type SendMapResultReply struct {
+}
+
+type SendReduceResultArgs struct {
+	Ok    bool
+	Files []string
+}
+
+type SendReduceResultReply struct {
 }
 
 // Cook up a unique-ish UNIX-domain socket name

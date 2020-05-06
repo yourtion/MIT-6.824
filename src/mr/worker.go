@@ -8,6 +8,9 @@ import (
 	"log"
 	"net/rpc"
 	"os"
+	"sort"
+	"strings"
+	"time"
 )
 
 // Map functions return a slice of KeyValue.
@@ -15,6 +18,14 @@ type KeyValue struct {
 	Key   string
 	Value string
 }
+
+// for sorting by key.
+type ByKey []KeyValue
+
+// for sorting by key.
+func (a ByKey) Len() int           { return len(a) }
+func (a ByKey) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
+func (a ByKey) Less(i, j int) bool { return a[i].Key < a[j].Key }
 
 // use ihash(key) % NReduce to choose the reduce task number for each KeyValue emitted by Map.
 func ihash(key string) int {
@@ -24,19 +35,25 @@ func ihash(key string) int {
 }
 
 // Worker main/mrworker.go calls this function.
-func Worker(mapf func(string, string) []KeyValue,
-	reducef func(string, []string) string) {
+func Worker(mapf func(string, string) []KeyValue, reducef func(string, []string) string) {
 	// uncomment to send the Example RPC to the master.
 	// CallExample()
-	taskInfo := CallGetTask()
-	taskResult := false
-	switch taskInfo.TaskType {
-	case "Map":
-		taskResult = runMapTask(taskInfo.Key, taskInfo.MapId, taskInfo.ReduceN, mapf)
-	case "Reduce":
-	default:
+	for {
+		taskInfo := CallGetTask()
+		switch taskInfo.TaskType {
+		case "Map":
+			ok, files := runMapTask(taskInfo.Key, taskInfo.TaskId, taskInfo.ReduceN, mapf)
+			CallSendMapResult(ok, taskInfo.Key, files)
+		case "Reduce":
+			ok, files := runReduceTask(taskInfo.TaskId, taskInfo.Key, reducef)
+			CallSendReduceResult(ok, files)
+		case "Exit":
+			os.Exit(0)
+		default:
+			// fmt.Println("sleep")
+			time.Sleep(time.Millisecond * 100)
+		}
 	}
-	fmt.Println(taskResult)
 
 }
 
@@ -45,24 +62,43 @@ func CallGetTask() *GetTaskReply {
 	args := GetTaskArgs{}
 	reply := GetTaskReply{}
 	call("Master.GetTask", &args, &reply)
-	fmt.Printf("CallGetTask reply: %+v\n", reply)
+	// fmt.Printf("CallGetTask reply: %+v\n", reply)
 	return &reply
 }
 
+func CallSendMapResult(ok bool, mapFile string, files []string) {
+	args := SendMapResultArgs{
+		Ok:          ok,
+		MapFile:     mapFile,
+		ReduceFiles: files,
+	}
+	reply := SendMapResultReply{}
+	call("Master.SendMapResult", &args, &reply)
+}
+
+func CallSendReduceResult(ok bool, files []string) {
+	args := SendReduceResultArgs{
+		Ok:    ok,
+		Files: files,
+	}
+	reply := SendReduceResultReply{}
+	call("Master.SendReduceResult", &args, &reply)
+}
+
 // runMapTask 执行map任务
-func runMapTask(filename string, id int, r int, mapf func(string, string) []KeyValue) bool {
+func runMapTask(filename string, id int, r int, mapf func(string, string) []KeyValue) (bool, []string) {
 	// 读取 map 传入文件
 	data, err := ioutil.ReadFile(filename)
 	// fmt.Println(string(data))
 	if err != nil {
-		return false
+		return false, nil
 	}
 	kvs := mapf(filename, string(data))
 
 	// 创建 map 任务中间文件（mr-tmp/mr-{mapId}-{reduceN}.txt）
 	files := make([]string, r)
 	for i := range files {
-		files[i] = fmt.Sprintf("/tmp/mr-%d-%d.txt", id, i)
+		files[i] = fmt.Sprintf("mr-%d-%d.txt", id, i)
 	}
 	// fmt.Printf("files: %+v \n ", files)
 
@@ -78,7 +114,7 @@ func runMapTask(filename string, id int, r int, mapf func(string, string) []KeyV
 		fileWriters[i], err = os.OpenFile(files[i], os.O_CREATE|os.O_WRONLY, os.ModePerm)
 		if err != nil {
 			fmt.Println(err)
-			return false
+			return false, nil
 		}
 		encodes[i] = json.NewEncoder(fileWriters[i])
 	}
@@ -90,10 +126,73 @@ func runMapTask(filename string, id int, r int, mapf func(string, string) []KeyV
 		err = encodes[k].Encode(&kv)
 		if err != nil {
 			fmt.Println(err)
-			return false
+			return false, nil
 		}
 	}
-	return true
+	return true, files
+}
+
+func readFile(filename string) ([]KeyValue, error) {
+	file, err := os.Open(filename)
+	defer func() {
+		_ = file.Close()
+	}()
+	if err != nil {
+		return nil, err
+	}
+	var kva []KeyValue
+	dec := json.NewDecoder(file)
+	for {
+		var kv KeyValue
+		if err := dec.Decode(&kv); err != nil {
+			break
+		}
+		kva = append(kva, kv)
+	}
+	return kva, nil
+}
+
+func runReduceTask(id int, filenames string, reducef func(string, []string) string) (bool, []string) {
+	files := strings.Split(filenames, ",")
+	kva := make([]KeyValue, 1000)
+	for _, f := range files {
+		kvs, err := readFile(f)
+		if err != nil {
+			return false, files
+		}
+		kva = append(kva, kvs...)
+	}
+	sort.Sort(ByKey(kva))
+	outFile := fmt.Sprintf("mr-out-%d", id)
+	onfile, err := os.Create(outFile)
+	if err != nil {
+		fmt.Println(err)
+		return true, files
+	}
+	i := 0
+	for i < len(kva) {
+		j := i + 1
+		for j < len(kva) && kva[j].Key == kva[i].Key {
+			j++
+		}
+		var values []string
+		for k := i; k < j; k++ {
+			values = append(values, kva[k].Value)
+		}
+
+		output := reducef(kva[i].Key, values)
+
+		// this is the correct format for each line of Reduce output.
+		if kva[i].Key != "" {
+			_, err = fmt.Fprintf(onfile, "%v %v\n", kva[i].Key, output)
+			if err != nil {
+				fmt.Println(err)
+				return true, files
+			}
+		}
+		i = j
+	}
+	return true, files
 }
 
 // CallExample example function to show how to make an RPC call to the master. the RPC argument and reply types are defined in rpc.go.
