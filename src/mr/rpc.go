@@ -26,31 +26,43 @@ type ExampleReply struct {
 
 // Add your RPC definitions here.
 
+// TaskType 任务类型
+type TaskType uint8
+
+const (
+	TaskExit   TaskType = 0 // 退出 Worker
+	TaskMap    TaskType = 1 // Map 任务
+	TaskReduce TaskType = 2 // Reduce 任务
+)
+
+// GetTaskArgs 获取 Task 参数
 type GetTaskArgs struct {
 }
 
+// GetTaskReply 获取 Task 返回
 type GetTaskReply struct {
-	TaskType string
-	Key      string
-	ReduceN  int
-	TaskId   int
+	TaskType TaskType // 任务类型
+	TaskId   int      // 任务 Id
+	ReduceN  int      // reduce 数量
+	Param    string   // 任务数据
 }
 
-type SendMapResultArgs struct {
-	Ok    bool
-	MapFile string
-	ReduceFiles []string
+// ResultReply 执行结果上报返回
+type ResultReply struct {
+	Ok bool
 }
 
-type SendMapResultReply struct {
+// MapResultArgs Map 任务执行结果
+type MapResultArgs struct {
+	Ok          bool     // 是否完成
+	Id          int      // Task Id
+	ReduceFiles []string // 生成的 Reduce 任务文件列表
 }
 
-type SendReduceResultArgs struct {
-	Ok    bool
-	Files []string
-}
-
-type SendReduceResultReply struct {
+// ReduceResultArgs Reduce 任务执行结果
+type ReduceResultArgs struct {
+	Ok bool // 是否完成
+	Id int  // Task Id
 }
 
 // Cook up a unique-ish UNIX-domain socket name

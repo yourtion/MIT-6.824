@@ -2,6 +2,7 @@
   <configuration default="false" name="MR-Master" type="GoApplicationRunConfiguration" factoryName="Go Application">
     <module name="MIT-6.824" />
     <working_directory value="$PROJECT_DIR$/src/main" />
+    <go_parameters value="-race" />
     <parameters value="pbd.go" />
     <kind value="FILE" />
     <filePath value="$PROJECT_DIR$/src/main/mrmaster.go" />
