@@ -7,9 +7,20 @@ package mr
 //
 
 import (
+	"fmt"
 	"os"
 	"strconv"
 )
+
+// 是否打开 debug 日志，输出调试信息
+const isDebug = false
+
+// DLog 打印 debug 日志
+func DLog(s string, a ...interface{}) {
+	if isDebug {
+		fmt.Printf(s, a...)
+	}
+}
 
 //
 // example to show how to declare the arguments
@@ -37,6 +48,7 @@ const (
 
 // GetTaskArgs 获取 Task 参数
 type GetTaskArgs struct {
+	WorkerId int // Worker Id
 }
 
 // GetTaskReply 获取 Task 返回
